@@ -6,6 +6,7 @@ defmodule Integrations.Adapters.Github do
   alias Integrations.Datatypes.User
   alias Integrations.Datatypes.Repository
   alias Integrations.Datatypes.Issue
+  alias Integrations.Datatypes.PullRequest
   require Logger
 
   @behaviour Integrations.Adapter
@@ -13,11 +14,11 @@ defmodule Integrations.Adapters.Github do
   defguard is_not_nil(term) when not is_nil(term)
   defguard both_are_not_nil(left, right) when is_not_nil(left) and is_not_nil(right)
 
-  def list_issues(organization, project) do
+  def list_issues(organization, project)
+      when is_binary(organization) and is_binary(project) do
     case Client.get_all_paginated("/repos/#{organization}/#{project}/issues") do
       {:ok, issues} ->
-        issues
-        |> Enum.reduce_while([], fn issue, acc ->
+        Enum.reduce_while(issues, [], fn issue, acc ->
           case from_raw_issue_to_native_issue(issue) do
             {:ok, issue} ->
               {:cont, acc ++ [issue]}
@@ -35,16 +36,27 @@ defmodule Integrations.Adapters.Github do
     end
   end
 
-  defp from_repository_url_to_native_repository(url) when is_binary(url) do
-    with [owner, name] when both_are_not_nil(owner, name) <- do_parse_repository_url(url) do
-      {:ok, %Repository{owner: owner, name: name}}
-    else
-      _ -> {:error, "Invalid repository URL."}
+  def list_pull_requests(organization, project)
+      when is_binary(organization) and is_binary(project) do
+    case Client.get_all_paginated("/repos/#{organization}/#{project}/pulls") do
+      {:ok, pull_requests} ->
+        Enum.reduce_while(pull_requests, [], fn pull_request, acc ->
+          case from_raw_pull_request_to_native_pull_request(pull_request) do
+            {:ok, pull_request} ->
+              {:cont, acc ++ [pull_request]}
+
+            {:error, reason} ->
+              Logger.error(fn -> "Error on Github's data payload. Reason: #{inspect(reason)}." end)
+
+              {:halt, []}
+          end
+        end)
+
+      {:error, reason} ->
+        Logger.error(fn -> "Error on Github's client. Reason: #{inspect(reason)}." end)
+        []
     end
   end
-
-  defp do_parse_repository_url(url),
-    do: url |> String.split("/repos/") |> List.last() |> String.split("/")
 
   defp from_raw_user_to_native_user(user) when is_map(user) do
     with id when is_not_nil(id) <- user["id"],
@@ -79,6 +91,27 @@ defmodule Integrations.Adapters.Github do
        }}
     end
   end
+
+  defp from_raw_pull_request_to_native_pull_request(pr) when is_map(pr) do
+    with id when is_not_nil(id) <- pr["number"],
+         state when is_not_nil(state) <- pr["state"],
+         locked when is_not_nil(locked) <- pr["locked"],
+         title when is_not_nil(title) <- pr["title"],
+         {:ok, owner} <- from_raw_user_to_native_user(pr["user"]) do
+      %PullRequest{id: id, state: state, title: title, locked: locked, owner: owner}
+    end
+  end
+
+  defp from_repository_url_to_native_repository(url) when is_binary(url) do
+    with [owner, name] when both_are_not_nil(owner, name) <- do_parse_repository_url(url) do
+      {:ok, %Repository{owner: owner, name: name}}
+    else
+      _ -> {:error, "Invalid repository URL."}
+    end
+  end
+
+  defp do_parse_repository_url(url),
+    do: url |> String.split("/repos/") |> List.last() |> String.split("/")
 
   defp from_raw_optional_datetime_to_datetime(nil), do: {:ok, nil, ""}
   defp from_raw_optional_datetime_to_datetime(dt), do: DateTime.from_iso8601(dt)
