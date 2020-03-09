@@ -97,8 +97,35 @@ defmodule Integrations.Adapters.Github do
          state when is_not_nil(state) <- pr["state"],
          locked when is_not_nil(locked) <- pr["locked"],
          title when is_not_nil(title) <- pr["title"],
-         {:ok, owner} <- from_raw_user_to_native_user(pr["user"]) do
-      %PullRequest{id: id, state: state, title: title, locked: locked, owner: owner}
+         {:ok, created_at, _} <-
+           from_raw_optional_datetime_to_datetime(pr["created_at"]),
+         {:ok, last_updated_at, _} <-
+           from_raw_optional_datetime_to_datetime(pr["updated_at"]),
+         {:ok, closed_at, _} <-
+           from_raw_optional_datetime_to_datetime(pr["closed_at"]),
+         {:ok, %User{} = owner} <- from_raw_user_to_native_user(pr["user"]),
+         {:ok, %Repository{} = repository} <- from_raw_repo_to_native_repo(pr["base"]) do
+      {:ok,
+       %PullRequest{
+         id: id,
+         state: state,
+         title: title,
+         locked: locked,
+         owner: owner,
+         repository: repository,
+         created_at: created_at,
+         last_updated_at: last_updated_at,
+         closed_at: closed_at
+       }}
+    else
+      _ -> {:error, "Invalid pull request"}
+    end
+  end
+
+  defp from_raw_repo_to_native_repo(base) when is_map(base) do
+    with owner when is_not_nil(owner) <- base["repo"]["owner"]["login"],
+         name when is_not_nil(name) <- base["repo"]["name"] do
+      {:ok, %Repository{owner: owner, name: name}}
     end
   end
 
