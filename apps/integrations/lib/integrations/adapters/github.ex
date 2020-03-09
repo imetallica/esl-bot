@@ -18,17 +18,7 @@ defmodule Integrations.Adapters.Github do
       when is_binary(organization) and is_binary(project) do
     case Client.get_all_paginated("/repos/#{organization}/#{project}/issues", state: "all") do
       {:ok, issues} ->
-        Enum.reduce_while(issues, [], fn issue, acc ->
-          case from_raw_issue_to_native_issue(issue) do
-            {:ok, issue} ->
-              {:cont, acc ++ [issue]}
-
-            {:error, reason} ->
-              Logger.error(fn -> "Error on Github's data payload. Reason: #{inspect(reason)}." end)
-
-              {:halt, []}
-          end
-        end)
+        do_reduce_issues(issues)
 
       {:error, reason} ->
         Logger.error(fn -> "Error on Github's client. Reason: #{inspect(reason)}." end)
@@ -40,22 +30,40 @@ defmodule Integrations.Adapters.Github do
       when is_binary(organization) and is_binary(project) do
     case Client.get_all_paginated("/repos/#{organization}/#{project}/pulls", state: "all") do
       {:ok, pull_requests} ->
-        Enum.reduce_while(pull_requests, [], fn pull_request, acc ->
-          case from_raw_pull_request_to_native_pull_request(pull_request) do
-            {:ok, pull_request} ->
-              {:cont, acc ++ [pull_request]}
-
-            {:error, reason} ->
-              Logger.error(fn -> "Error on Github's data payload. Reason: #{inspect(reason)}." end)
-
-              {:halt, []}
-          end
-        end)
+        do_reduce_pull_requests(pull_requests)
 
       {:error, reason} ->
         Logger.error(fn -> "Error on Github's client. Reason: #{inspect(reason)}." end)
         []
     end
+  end
+
+  defp do_reduce_issues(issues) when is_list(issues) do
+    Enum.reduce_while(issues, [], fn issue, acc ->
+      case from_raw_issue_to_native_issue(issue) do
+        {:ok, issue} ->
+          {:cont, acc ++ [issue]}
+
+        {:error, reason} ->
+          Logger.error("Error on Github's data payload. Reason: #{inspect(reason)}.")
+
+          {:halt, []}
+      end
+    end)
+  end
+
+  defp do_reduce_pull_requests(pull_requests) when is_list(pull_requests) do
+    Enum.reduce_while(pull_requests, [], fn pull_request, acc ->
+      case from_raw_pull_request_to_native_pull_request(pull_request) do
+        {:ok, pull_request} ->
+          {:cont, acc ++ [pull_request]}
+
+        {:error, reason} ->
+          Logger.error("Error on Github's data payload. Reason: #{inspect(reason)}.")
+
+          {:halt, []}
+      end
+    end)
   end
 
   defp from_raw_user_to_native_user(user) when is_map(user) do
@@ -130,10 +138,12 @@ defmodule Integrations.Adapters.Github do
   end
 
   defp from_repository_url_to_native_repository(url) when is_binary(url) do
-    with [owner, name] when both_are_not_nil(owner, name) <- do_parse_repository_url(url) do
-      {:ok, %Repository{owner: owner, name: name}}
-    else
-      _ -> {:error, "Invalid repository URL."}
+    case do_parse_repository_url(url) do
+      [owner, name] when both_are_not_nil(owner, name) ->
+        {:ok, %Repository{owner: owner, name: name}}
+
+      _ ->
+        {:error, "Invalid repository URL."}
     end
   end
 
