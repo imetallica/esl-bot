@@ -16,7 +16,7 @@ defmodule Integrations.Adapters.Github do
 
   def list_issues(organization, project)
       when is_binary(organization) and is_binary(project) do
-    case Client.get_all_paginated("/repos/#{organization}/#{project}/issues") do
+    case Client.get_all_paginated("/repos/#{organization}/#{project}/issues", state: "all") do
       {:ok, issues} ->
         Enum.reduce_while(issues, [], fn issue, acc ->
           case from_raw_issue_to_native_issue(issue) do
@@ -38,7 +38,7 @@ defmodule Integrations.Adapters.Github do
 
   def list_pull_requests(organization, project)
       when is_binary(organization) and is_binary(project) do
-    case Client.get_all_paginated("/repos/#{organization}/#{project}/pulls") do
+    case Client.get_all_paginated("/repos/#{organization}/#{project}/pulls", state: "all") do
       {:ok, pull_requests} ->
         Enum.reduce_while(pull_requests, [], fn pull_request, acc ->
           case from_raw_pull_request_to_native_pull_request(pull_request) do
