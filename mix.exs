@@ -16,6 +16,6 @@ defmodule ESLBot.MixProject do
   #
   # Run "mix help deps" for examples and options.
   defp deps do
-    []
+    [{:credo, ">= 0.0.0"}]
   end
 end
